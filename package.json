@@ -1,6 +1,6 @@
 {
   "name": "deepseek-web-harness",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "type": "module",
   "description": "MCP bridge that routes prompts from compatible AI harnesses to an authenticated DeepSeek Web browser session.",

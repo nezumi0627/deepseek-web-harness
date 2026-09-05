@@ -7,7 +7,12 @@ const transport = new StdioClientTransport({ command: process.execPath, args: ["
 try {
   await client.connect(transport);
   const { tools } = await client.listTools();
-  assert.ok(tools.some(tool => tool.name === "ask_web_deepseek"));
+  const askTool = tools.find(tool => tool.name === "ask_web_deepseek");
+  assert.ok(askTool);
+  for (const field of ["prompt", "skills", "mode", "deepThink", "search", "newChat", "attachments"]) {
+    assert.ok(askTool.inputSchema?.properties?.[field], `ask_web_deepseek is missing ${field}`);
+  }
+  assert.ok(tools.some(tool => tool.name === "deepseek_web_capabilities"));
   assert.ok(tools.some(tool => tool.name === "list_deepseek_skills"));
   console.log("mcp-check: ok");
 } finally {
