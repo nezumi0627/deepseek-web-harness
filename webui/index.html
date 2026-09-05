@@ -29,4 +29,7 @@
     const picker=document.createElement('input');picker.type='file';picker.id='mediaPicker';picker.accept='image/*,.pdf,.txt,.md,.csv,.json,.doc,.docx,.xls,.xlsx';picker.setAttribute('aria-label','画像・ファイルを選択');const label=document.createElement('label');label.textContent='画像・ファイルを選択';label.htmlFor='mediaPicker';label.className='field';document.querySelector('.inspector').insertBefore(label,document.querySelector('#attachment'));label.append(picker);
     const nativeFetch=window.fetch;window.fetch=async(input,init={})=>{if(String(input).endsWith('/v1/chat/completions')&&picker.files[0]&&init.body){const file=picker.files[0];const data=await new Promise(resolve=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.readAsDataURL(file)});const uploaded=await nativeFetch('/v1/uploads',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({filename:file.name,data})}).then(r=>r.json());const body=JSON.parse(init.body);body.deepseek_web??={};body.deepseek_web.attachments=[uploaded.path];init={...init,body:JSON.stringify(body)};picker.value=''}return nativeFetch(input,init)};
   </script>
+  <script>
+    const originalSend=send;let busy=false;send=async()=>{if(busy)return;busy=true;$('send').disabled=true;try{return await originalSend()}finally{busy=false;$('send').disabled=false}};
+  </script>
 </body></html>
