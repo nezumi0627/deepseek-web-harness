@@ -1,4 +1,4 @@
-import { askWebDeepSeek } from "./browser.js";
+import { askWebDeepSeekDetailed } from "./browser.js";
 import { buildPrompt } from "./skills.js";
 
 const args = process.argv.slice(2);
@@ -12,18 +12,22 @@ const searchIndex = args.indexOf("--search");
 const search = searchIndex >= 0 ? (args.splice(searchIndex, 1), true) : undefined;
 const newChatIndex = args.indexOf("--new-chat");
 const newChat = newChatIndex >= 0 ? (args.splice(newChatIndex, 1), true) : false;
+const showThinkingIndex = args.indexOf("--show-thinking");
+const showThinking = showThinkingIndex >= 0 ? (args.splice(showThinkingIndex, 1), true) : false;
 const attachments = [];
 for (let i = args.length - 1; i >= 0; i--) {
   if (args[i] === "--attach" && args[i + 1]) attachments.unshift(...args.splice(i, 2).slice(1));
 }
 const prompt = args.join(" ").trim();
 if (!prompt) {
-  console.error('Usage: npm run chat -- "hello" [--skill concise] [--mode instant|expert|imageRecognition] [--deep-think] [--search] [--new-chat] [--attach C:\\path\\file]');
+  console.error('Usage: npm run chat -- "hello" [--skill concise] [--mode instant|expert|imageRecognition] [--deep-think] [--show-thinking] [--search] [--new-chat] [--attach /path/file]');
   process.exit(1);
 }
 
 try {
-  console.log(await askWebDeepSeek(buildPrompt(prompt, skill ? [skill] : []), { mode, deepThink, search, newChat, attachments }));
+  const result = await askWebDeepSeekDetailed(buildPrompt(prompt, skill ? [skill] : []), { mode, deepThink, search, newChat, attachments });
+  if (showThinking && result.thinking) console.log(`[thinking]\n${result.thinking}\n[/thinking]\n`);
+  console.log(result.text);
 } catch (error) {
   console.error(error instanceof Error ? error.message : String(error));
   process.exit(1);

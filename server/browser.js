@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { chromium } from "playwright-core";
 
 const DEEPSEEK_URL = "https://chat.deepseek.com/";
@@ -11,15 +11,50 @@ export function bridgeHome() {
   return process.env.DEEPSEEK_WEB_BRIDGE_HOME || join(homedir(), ".deepseek-web-bridge");
 }
 
+export function chromeCandidates(platform = process.platform) {
+  if (platform === "win32") {
+    return [
+      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+      "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+      "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+      "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+    ];
+  }
+  if (platform === "darwin") {
+    return [
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+      "/Applications/Chromium.app/Contents/MacOS/Chromium"
+    ];
+  }
+  return [
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+    "/usr/bin/microsoft-edge",
+    "/usr/bin/microsoft-edge-stable"
+  ];
+}
+
+function findBrowserOnPath() {
+  const names = process.platform === "win32"
+    ? ["chrome.exe", "msedge.exe"]
+    : ["google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge", "microsoft-edge-stable"];
+  const lookup = process.platform === "win32" ? "where.exe" : "which";
+  for (const name of names) {
+    const result = spawnSync(lookup, [name], { encoding: "utf8", windowsHide: true });
+    if (result.status !== 0) continue;
+    const found = String(result.stdout || "").split(/\r?\n/).map(value => value.trim()).find(Boolean);
+    if (found && existsSync(found)) return found;
+  }
+  return null;
+}
+
 export function findChrome() {
-  const candidates = [
-    process.env.DEEPSEEK_WEB_CHROME,
-    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
-  ].filter(Boolean);
-  return candidates.find(existsSync) || null;
+  const override = process.env.DEEPSEEK_WEB_CHROME;
+  if (override && existsSync(override)) return override;
+  return chromeCandidates().find(existsSync) || findBrowserOnPath();
 }
 
 function visibleFirst(page, selectors) {
@@ -121,16 +156,32 @@ async function sendPrompt(page, input, prompt) {
   else await input.press("Enter");
 }
 
-async function assistantTexts(page) {
+async function assistantReplies(page) {
   return page.evaluate(() => {
-    const selectors = [
-      '[data-role="assistant"]',
-      '[data-message-author-role="assistant"]',
-      '.ds-markdown',
-      '.markdown'
-    ];
-    const nodes = selectors.flatMap(selector => [...document.querySelectorAll(selector)]);
-    return [...new Set(nodes)].map(node => (node.innerText || node.textContent || "").trim()).filter(Boolean);
+    const readText = node => (node?.innerText || node?.textContent || "").trim();
+    const finalNodes = [...document.querySelectorAll(".ds-assistant-message-main-content")];
+    if (finalNodes.length) {
+      return finalNodes
+        .map(node => {
+          const wrapper = node.closest(".ds-message") || node.parentElement;
+          return {
+            text: readText(node),
+            thinking: readText(wrapper?.querySelector(".ds-think-content")) || null
+          };
+        })
+        .filter(reply => reply.text);
+    }
+
+    const selectors = ['[data-role="assistant"]', '[data-message-author-role="assistant"]'];
+    const nodes = [...new Set(selectors.flatMap(selector => [...document.querySelectorAll(selector)]))];
+    return nodes.map(node => {
+      const clone = node.cloneNode(true);
+      clone.querySelectorAll?.(".ds-think-content").forEach(element => element.remove());
+      return {
+        text: readText(clone),
+        thinking: readText(node.querySelector?.(".ds-think-content")) || null
+      };
+    }).filter(reply => reply.text);
   });
 }
 
@@ -139,14 +190,14 @@ async function waitForStableReply(page, beforeCount, timeoutMs) {
   let previous = "";
   let stableSince = 0;
   while (Date.now() - started < timeoutMs) {
-    const texts = await assistantTexts(page);
-    const current = texts.at(-1) || "";
-    if (texts.length > beforeCount && current) {
-      if (current === previous) {
+    const replies = await assistantReplies(page);
+    const current = replies.at(-1);
+    if (replies.length > beforeCount && current?.text) {
+      if (current.text === previous) {
         if (!stableSince) stableSince = Date.now();
         if (Date.now() - stableSince >= 1200) return current;
       } else {
-        previous = current;
+        previous = current.text;
         stableSince = 0;
       }
     }
@@ -158,12 +209,17 @@ async function waitForStableReply(page, beforeCount, timeoutMs) {
 async function startDebugChrome(executablePath, profile) {
   const devToolsFile = join(profile, "DevToolsActivePort");
   rmSync(devToolsFile, { force: true });
-  const chrome = spawn(executablePath, [
+  const args = [
     `--user-data-dir=${profile}`,
     "--remote-debugging-port=0",
-    "--start-maximized",
-    DEEPSEEK_URL
-  ], { stdio: "ignore" });
+  ];
+  if (/^(1|true|yes)$/i.test(process.env.DEEPSEEK_WEB_HEADLESS || "")) {
+    args.push("--headless=new", "--window-size=1440,1200");
+  } else {
+    args.push("--start-maximized");
+  }
+  args.push(DEEPSEEK_URL);
+  const chrome = spawn(executablePath, args, { stdio: "ignore" });
 
   const started = Date.now();
   while (Date.now() - started < 15_000) {
@@ -177,7 +233,14 @@ async function startDebugChrome(executablePath, profile) {
   throw new Error("Chrome debugging endpoint did not become ready. Close the DeepSeek login browser and retry.");
 }
 
-async function withDeepSeekPage(run) {
+function normalizeConversationUrl(value) {
+  if (!value) return DEEPSEEK_URL;
+  const url = new URL(value);
+  if (url.origin !== new URL(DEEPSEEK_URL).origin) throw new Error("conversationUrl must point to chat.deepseek.com");
+  return url.href;
+}
+
+async function withDeepSeekPage(run, options = {}) {
   const executablePath = findChrome();
   if (!executablePath) throw new Error("Chrome or Edge was not found. Set DEEPSEEK_WEB_CHROME to the browser executable path.");
   const profile = join(bridgeHome(), "chrome-profile");
@@ -189,7 +252,8 @@ async function withDeepSeekPage(run) {
     const context = browser.contexts()[0];
     if (!context) throw new Error("Chrome opened without an accessible browser context.");
     const page = context.pages().find(candidate => candidate.url().includes("deepseek.com")) || context.pages()[0] || await context.newPage();
-    if (!page.url().includes("deepseek.com")) await page.goto(DEEPSEEK_URL, { waitUntil: "domcontentloaded", timeout: 60_000 });
+    const targetUrl = normalizeConversationUrl(options.conversationUrl);
+    if (page.url() !== targetUrl) await page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 60_000 });
     await waitForComposer(page, 20_000);
     return await run(page);
   } finally {
@@ -198,7 +262,7 @@ async function withDeepSeekPage(run) {
   }
 }
 
-export async function askWebDeepSeek(prompt, options = {}) {
+export async function askWebDeepSeekDetailed(prompt, options = {}) {
   if (typeof prompt !== "string" || !prompt.trim()) throw new Error("prompt must be a non-empty string");
   return withDeepSeekPage(async page => {
     if (options.newChat) {
@@ -216,10 +280,15 @@ export async function askWebDeepSeek(prompt, options = {}) {
       if (!ok) throw new Error("Search control was not found in DeepSeek Web.");
     }
     await uploadFiles(page, options.attachments || []);
-    const beforeCount = (await assistantTexts(page)).length;
+    const beforeCount = (await assistantReplies(page)).length;
     await sendPrompt(page, input, prompt.trim());
-    return await waitForStableReply(page, beforeCount, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
-  });
+    const reply = await waitForStableReply(page, beforeCount, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    return { ...reply, conversationUrl: page.url() };
+  }, { conversationUrl: options.conversationUrl });
+}
+
+export async function askWebDeepSeek(prompt, options = {}) {
+  return (await askWebDeepSeekDetailed(prompt, options)).text;
 }
 
 export async function getDeepSeekCapabilities() {
