@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { chromium } from "playwright-core";
 
@@ -45,6 +45,65 @@ async function waitForComposer(page, timeoutMs) {
   throw new Error(`DeepSeek Web composer was not found at ${page.url()}. Run npm run login, sign in, close that browser, then retry.`);
 }
 
+async function clickControl(page, names, wanted) {
+  if (wanted === undefined || wanted === null) return false;
+  for (const name of names) {
+    const pattern = new RegExp(name, "i");
+    const candidates = [
+      page.getByRole("button", { name: pattern }),
+      page.getByText(pattern, { exact: false })
+    ];
+    for (const candidate of candidates) {
+      const item = candidate.filter({ visible: true }).last();
+      if (!await item.isVisible().catch(() => false)) continue;
+      const pressed = await item.getAttribute("aria-pressed").catch(() => null);
+      const classes = await item.getAttribute("class").catch(() => "") || "";
+      const selected = pressed === "true" || /active|selected|enabled/i.test(classes);
+      if (pressed === null) {
+        if (wanted) await item.click();
+      } else if (Boolean(wanted) !== selected) {
+        await item.click();
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+async function selectMode(page, mode) {
+  if (!mode) return;
+  const names = {
+    instant: ["instant", "インスタント"],
+    expert: ["expert", "エキスパート"],
+    imageRecognition: ["image recognition", "画像認識"]
+  }[mode];
+  if (!names) throw new Error(`Unsupported DeepSeek mode: ${mode}`);
+  const ok = await clickControl(page, names, true);
+  if (!ok) throw new Error(`DeepSeek mode control was not found: ${mode}`);
+  await page.waitForTimeout(300);
+}
+
+async function uploadFiles(page, files) {
+  if (!files?.length) return;
+  const paths = files.map(file => resolve(file));
+  for (const file of paths) if (!existsSync(file)) throw new Error(`Attachment not found: ${file}`);
+
+  let input = page.locator('input[type="file"]').last();
+  if (!await input.count()) {
+    const upload = visibleFirst(page, [
+      'button[aria-label*="upload" i]',
+      'button[aria-label*="attach" i]',
+      'button[title*="upload" i]',
+      'button[title*="attach" i]'
+    ]);
+    if (await upload.isVisible().catch(() => false)) await upload.click();
+    input = page.locator('input[type="file"]').last();
+  }
+  if (!await input.count()) throw new Error("DeepSeek Web file upload control was not found.");
+  await input.setInputFiles(paths);
+  await page.waitForTimeout(900);
+}
+
 async function sendPrompt(page, input, prompt) {
   const tag = await input.evaluate(el => el.tagName.toLowerCase());
   if (tag === "textarea" || tag === "input") await input.fill(prompt);
@@ -71,9 +130,7 @@ async function assistantTexts(page) {
       '.markdown'
     ];
     const nodes = selectors.flatMap(selector => [...document.querySelectorAll(selector)]);
-    return [...new Set(nodes)]
-      .map(node => (node.innerText || node.textContent || "").trim())
-      .filter(Boolean);
+    return [...new Set(nodes)].map(node => (node.innerText || node.textContent || "").trim()).filter(Boolean);
   });
 }
 
@@ -120,11 +177,9 @@ async function startDebugChrome(executablePath, profile) {
   throw new Error("Chrome debugging endpoint did not become ready. Close the DeepSeek login browser and retry.");
 }
 
-export async function askWebDeepSeek(prompt, options = {}) {
-  if (typeof prompt !== "string" || !prompt.trim()) throw new Error("prompt must be a non-empty string");
+async function withDeepSeekPage(run) {
   const executablePath = findChrome();
   if (!executablePath) throw new Error("Chrome or Edge was not found. Set DEEPSEEK_WEB_CHROME to the browser executable path.");
-
   const profile = join(bridgeHome(), "chrome-profile");
   mkdirSync(profile, { recursive: true });
   const { chrome, port } = await startDebugChrome(executablePath, profile);
@@ -135,12 +190,54 @@ export async function askWebDeepSeek(prompt, options = {}) {
     if (!context) throw new Error("Chrome opened without an accessible browser context.");
     const page = context.pages().find(candidate => candidate.url().includes("deepseek.com")) || context.pages()[0] || await context.newPage();
     if (!page.url().includes("deepseek.com")) await page.goto(DEEPSEEK_URL, { waitUntil: "domcontentloaded", timeout: 60_000 });
-    const input = await waitForComposer(page, options.loginTimeoutMs ?? 20_000);
-    const beforeCount = (await assistantTexts(page)).length;
-    await sendPrompt(page, input, prompt.trim());
-    return await waitForStableReply(page, beforeCount, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    await waitForComposer(page, 20_000);
+    return await run(page);
   } finally {
     await browser?.close().catch(() => {});
     if (!chrome.killed) chrome.kill();
   }
+}
+
+export async function askWebDeepSeek(prompt, options = {}) {
+  if (typeof prompt !== "string" || !prompt.trim()) throw new Error("prompt must be a non-empty string");
+  return withDeepSeekPage(async page => {
+    if (options.newChat) {
+      await clickControl(page, ["new chat", "new conversation", "新しいチャット", "新規チャット"], true);
+      await page.waitForTimeout(500);
+    }
+    const input = await waitForComposer(page, options.loginTimeoutMs ?? 20_000);
+    await selectMode(page, options.mode);
+    if (options.deepThink !== undefined) {
+      const ok = await clickControl(page, ["deepthink", "deep think", "r1", "深く考える", "ディープシンク", "深度思考"], options.deepThink);
+      if (!ok) throw new Error("DeepThink control was not found in DeepSeek Web.");
+    }
+    if (options.search !== undefined) {
+      const ok = await clickControl(page, ["search", "web search", "検索", "スマート検索", "联网搜索"], options.search);
+      if (!ok) throw new Error("Search control was not found in DeepSeek Web.");
+    }
+    await uploadFiles(page, options.attachments || []);
+    const beforeCount = (await assistantTexts(page)).length;
+    await sendPrompt(page, input, prompt.trim());
+    return await waitForStableReply(page, beforeCount, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  });
+}
+
+export async function getDeepSeekCapabilities() {
+  return withDeepSeekPage(async page => {
+    const bodyText = await page.locator("body").innerText();
+    const fileInput = page.locator('input[type="file"]');
+    const accept = await fileInput.count() ? await fileInput.last().getAttribute("accept") : null;
+    return {
+      modes: {
+        instant: /instant|インスタント/i.test(bodyText),
+        expert: /expert|エキスパート/i.test(bodyText),
+        imageRecognition: /image\s*recognition|画像認識/i.test(bodyText)
+      },
+      deepThink: /deep\s*think|r1|深く考える|ディープシンク|深度思考/i.test(bodyText),
+      search: /search|検索|スマート検索|联网搜索/i.test(bodyText),
+      fileUpload: Boolean(await fileInput.count()),
+      acceptedFileTypes: accept,
+      note: "Detected from the currently signed-in DeepSeek Web UI."
+    };
+  });
 }

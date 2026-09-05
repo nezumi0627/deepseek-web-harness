@@ -1,25 +1,46 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
-import { askWebDeepSeek } from "./browser.js";
+import { askWebDeepSeek, getDeepSeekCapabilities } from "./browser.js";
 import { buildPrompt, listSkills } from "./skills.js";
 
-const server = new McpServer({ name: "deepseek-web-harness", version: "0.1.0" });
+const server = new McpServer({ name: "deepseek-web-harness", version: "0.2.0" });
 
 server.registerTool(
   "ask_web_deepseek",
   {
     title: "Ask DeepSeek Web",
-    description: "Send a prompt to the signed-in DeepSeek Web browser session and return the final text response. Optional local skills are injected before the prompt.",
+    description: "Use the signed-in DeepSeek Web session. Supports local skills, DeepThink, web search, attachments, and fresh chats.",
     inputSchema: {
       prompt: z.string().min(1),
-      skills: z.array(z.string()).default([])
+      skills: z.array(z.string()).default([]),
+      mode: z.enum(["instant", "expert", "imageRecognition"]).optional(),
+      deepThink: z.boolean().optional(),
+      search: z.boolean().optional(),
+      newChat: z.boolean().default(false),
+      attachments: z.array(z.string()).default([]).describe("Absolute local file paths to upload before sending")
     }
   },
-  async ({ prompt, skills }) => {
+  async ({ prompt, skills, mode, deepThink, search, newChat, attachments }) => {
     try {
-      const text = await askWebDeepSeek(buildPrompt(prompt, skills));
+      const text = await askWebDeepSeek(buildPrompt(prompt, skills), { mode, deepThink, search, newChat, attachments });
       return { content: [{ type: "text", text }] };
+    } catch (error) {
+      return { isError: true, content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }] };
+    }
+  }
+);
+
+server.registerTool(
+  "deepseek_web_capabilities",
+  {
+    title: "DeepSeek Web Capabilities",
+    description: "Inspect the signed-in DeepSeek Web UI and report available controls and upload support.",
+    inputSchema: {}
+  },
+  async () => {
+    try {
+      return { content: [{ type: "text", text: JSON.stringify(await getDeepSeekCapabilities(), null, 2) }] };
     } catch (error) {
       return { isError: true, content: [{ type: "text", text: error instanceof Error ? error.message : String(error) }] };
     }

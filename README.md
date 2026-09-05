@@ -60,10 +60,21 @@ Generic MCP stdio config:
 
 Tools:
 
-- `ask_web_deepseek` — prompt DeepSeek Web and return its final text.
+- `ask_web_deepseek` — prompt DeepSeek Web and return its final text. Supports `mode` (`instant`, `expert`, `imageRecognition`), `deepThink`, `search`, `newChat`, `attachments`, and local `skills`.
+- `deepseek_web_capabilities` — inspect the signed-in Web UI for DeepThink, search, and file-upload support.
 - `list_deepseek_skills` — list local skills.
 
-`ask_web_deepseek` accepts `skills`, for example `["concise"]`. Skills live at `skills/<name>/SKILL.md` and are prepended to the prompt.
+`ask_web_deepseek` accepts `skills`, for example `["concise"]`. Skills live at `skills/<name>/SKILL.md` and are prepended to the prompt. `attachments` takes absolute local file paths and uploads them to DeepSeek Web before the prompt is sent. The bridge also maps the current Web UI controls for Instant, Expert, Image Recognition, DeepThink, and Smart Search.
+
+The current signed-in Web UI advertises uploads for common images (`png`, `jpg`, `webp`, `gif`, `svg`), PDFs, Office documents, spreadsheets, text/Markdown/CSV/JSON, source-code files, and several additional document/image formats. Use `deepseek_web_capabilities` to read the live `accept` list instead of hard-coding it in clients.
+
+CLI examples:
+
+```powershell
+npm run chat -- "Explain this carefully" --mode expert --deep-think --new-chat
+npm run chat -- "What is in this file?" --mode imageRecognition --attach C:\path\image.png --new-chat
+npm run chat -- "Find the latest information about this topic" --search --new-chat
+```
 
 ## Credits
 
