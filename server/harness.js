@@ -1,16 +1,16 @@
 import { createInterface } from "node:readline/promises";
 import { stdin as input, stdout as output } from "node:process";
 import { askWebDeepSeekDetailed } from "./browser.js";
-import { autoSelectSkills, buildPrompt } from "./skills.js";
+import { autoSelectSkills, buildPrompt, forceLanguage } from "./skills.js";
 import { appendTrajectory, compactSession, createSession, estimateTokens, getSession, listSessions, updateSession } from "./state.js";
 import { askWithLocalToolLoop } from "./agent.js";
 
 const rl = createInterface({ input, output });
 let session = createSession({ title: "Harness chat" });
-let settings = { mode: undefined, deepThink: undefined, search: undefined, skills: [], attachments: [], stream: false, includeThinking: true };
+let settings = { mode: undefined, deepThink: undefined, search: undefined, language: undefined, skills: [], attachments: [], stream: false, includeThinking: true };
 
 function showHelp() {
-  console.log("/new [title]  /sessions  /use <id>  /rename <title>  /fork  /compact  /attach <path>  /skill <name>  /mode <instant|expert|imageRecognition>  /think  /search  /stream  /tools  /clear-attach  /quit");
+  console.log("/new [title]  /sessions  /use <id>  /rename <title>  /fork  /compact  /attach <path>  /skill <name>  /language <name>  /mode <instant|expert|imageRecognition>  /think  /search  /stream  /tools  /clear-attach  /quit");
 }
 function showStatus() {
   console.log(`session=${session.id} title=${session.title} messages=${session.messages.length} tokens≈${session.usage.totalTokens} mode=${settings.mode || "default"} stream=${settings.stream ? "on" : "off"}`);
@@ -29,6 +29,7 @@ async function command(line) {
   else if (name === "attach") { settings.attachments.push(value); console.log(`attachments=${settings.attachments.length}`); }
   else if (name === "clear-attach") settings.attachments = [];
   else if (name === "skill") { settings.skills = value ? value.split(",").map(x => x.trim()).filter(Boolean) : []; console.log(`skills=${settings.skills.join(", ") || "auto"}`); }
+  else if (name === "language") { settings.language = value || undefined; console.log(`language=${settings.language || "auto"}`); }
   else if (name === "mode") settings.mode = value || undefined;
   else if (name === "think") settings.deepThink = !settings.deepThink;
   else if (name === "search") settings.search = !settings.search;
@@ -42,7 +43,7 @@ async function command(line) {
 async function answer(prompt) {
   const skills = settings.skills.length ? settings.skills : autoSelectSkills(prompt);
   const started = performance.now();
-  const fullPrompt = buildPrompt(prompt, skills);
+  const fullPrompt = forceLanguage(buildPrompt(prompt, skills), settings.language);
   appendTrajectory(session.id, { type: "harness_request", prompt, skills, attachments: settings.attachments });
   const result = settings.localTools
     ? await askWithLocalToolLoop(askWebDeepSeekDetailed, fullPrompt, { ...settings, newChat: !session.conversationUrl, conversationUrl: session.conversationUrl })

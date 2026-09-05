@@ -24,7 +24,8 @@
           "include_thinking": { "type": "boolean" },
           "session_id": { "type": "string", "pattern": "^sess_[0-9a-f-]{36}$" },
           "local_tools": { "type": "boolean", "default": false },
-          "max_tool_turns": { "type": "integer", "minimum": 1, "maximum": 8, "default": 8 }
+          "max_tool_turns": { "type": "integer", "minimum": 1, "maximum": 8, "default": 8 },
+          "language": { "type": "string", "maxLength": 40, "description": "Force the answer language, for example Japanese, English, or zh-CN." }
         },
         "additionalProperties": false
       },

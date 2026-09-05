@@ -55,6 +55,8 @@ npm run api
 
 CLI の `--tools` または API の `deepseek_web.local_tools: true` を指定すると、DeepSeek の tool call を最大 8 回まで自動実行します。標準 tool は `read_file`、`write_file`、`list_files`、`run_check` で、対象は `DEEPSEEK_WEB_TOOL_ROOT`（未指定時は起動ディレクトリ）配下に制限されます。thinking は CLI の `--show-thinking --thinking-tag` で `<think>...</think>` として出力できます。
 
+回答言語は `npm run chat -- "質問" --language Japanese`、harness の `/language Japanese`、または API の `deepseek_web.language: "Japanese"` で固定できます。指定値は DeepSeek への明示的な言語指示として注入されます。
+
 Default base URL: `http://127.0.0.1:8787`. Swagger UI is available at `http://127.0.0.1:8787/docs`, the OpenAPI 3.1 document is at `/openapi.json`, and the DeepWiki indexing guide is at `/deepwiki`.
 
 Generic MCP stdio config:

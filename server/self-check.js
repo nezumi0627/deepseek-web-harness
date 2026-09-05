@@ -1,6 +1,6 @@
 import { strict as assert } from "node:assert";
 import { chromeCandidates } from "./browser.js";
-import { buildPrompt, listSkills } from "./skills.js";
+import { buildPrompt, forceLanguage, listSkills } from "./skills.js";
 import { buildToolAwarePrompt, parseToolCalls } from "./tool-protocol.js";
 import { cleanReplyText } from "./browser.js";
 import { executeLocalTool, localToolSchemas } from "./local-tools.js";
@@ -18,6 +18,7 @@ assert.deepEqual(parseToolCalls('{"type":"tool_calls","calls":[{"id":"c1","name"
 assert.equal(cleanReplyText("降雨-\n6\n。\n風−\n3。\n資訊-\n，\n如下-：\n\n## 6\n\n5\n。"), "降雨。\n風。\n資訊，\n如下：\n\n。");
 assert.equal(localToolSchemas.length, 4);
 assert.match(await executeLocalTool("read_file", { path: "package.json" }), /deepseek-web-harness/);
+assert.match(forceLanguage("hello", "Japanese"), /Answer entirely in Japanese/);
 let loopTurn = 0;
 const loopResult = await askWithLocalToolLoop(async () => {
   loopTurn += 1;

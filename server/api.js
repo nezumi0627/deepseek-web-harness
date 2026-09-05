@@ -4,7 +4,7 @@ import { randomUUID } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { askWebDeepSeekDetailed } from "./browser.js";
-import { autoSelectSkills, buildPrompt } from "./skills.js";
+import { autoSelectSkills, buildPrompt, forceLanguage } from "./skills.js";
 import { buildToolAwarePrompt, parseToolCalls } from "./tool-protocol.js";
 import { appendTrajectory, compactSession, createSession, deleteSession, estimateTokens, getSession, listSessions, readTrajectory, updateSession } from "./state.js";
 import { askWithLocalToolLoop } from "./agent.js";
@@ -416,7 +416,7 @@ export function createApiServer({ ask = askWebDeepSeekDetailed, apiKey = process
       const compacted = compactSession(session);
       session = compacted.session;
       const skills = Array.isArray(ext.skills) && ext.skills.length ? ext.skills : autoSelectSkills(prompt);
-      const fullPrompt = buildPrompt(buildToolAwarePrompt(prompt, tools), skills);
+      const fullPrompt = forceLanguage(buildPrompt(buildToolAwarePrompt(prompt, tools), skills), ext.language);
       appendTrajectory(session.id, { type: "request", format, prompt, skills, compacted: compacted.compacted });
       const inputTokens = estimateTokens(fullPrompt);
       const callOptions = { ...deepSeekOptions(body), conversationUrl: session.conversationUrl || deepSeekOptions(body).conversationUrl, newChat: !session.conversationUrl };

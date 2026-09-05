@@ -31,6 +31,13 @@ export function buildPrompt(prompt, skillNames = []) {
   return `${skillText}\n\n## User request\n${prompt.trim()}`;
 }
 
+export function forceLanguage(prompt, language) {
+  if (!language) return prompt.trim();
+  const value = String(language).trim();
+  if (!/^[\p{L}\p{N} _-]{1,40}$/u.test(value)) throw new Error("language must contain only letters, numbers, spaces, _ or -.");
+  return `[Language requirement]\nAnswer entirely in ${value}. Do not switch languages unless the user explicitly asks.\n\n${prompt.trim()}`;
+}
+
 export function autoSelectSkills(prompt) {
   const text = String(prompt).toLowerCase();
   const available = new Set(listSkills());
