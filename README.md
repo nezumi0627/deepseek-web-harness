@@ -89,6 +89,10 @@ DEEPSEEK_WEB_HEADLESS=1 npm run chat -- "Headless test" --new-chat
 
 Inspired by [miuuyy/codex-chatgpt-web](https://github.com/miuuyy/codex-chatgpt-web), especially its local bridge -> owned browser session -> web AI response pattern. This project is a separate DeepSeek-oriented implementation.
 
+## Disclaimer
+
+This is an unofficial third-party project and is not affiliated with, endorsed by, or sponsored by DeepSeek. It automates a browser session that you sign in to and control. You are responsible for using it in accordance with DeepSeek's terms, policies, rate limits, and applicable laws. DeepSeek may change its website, authentication, verification, models, limits, or available features at any time, which can partially or completely break this project. Do not use this project to bypass authentication, verification, access controls, or service restrictions. This software is provided "as is" without warranty; use it at your own risk.
+
 ## Notes
 
 - Windows, Linux/Ubuntu, and macOS are supported. Common Chrome, Chromium, and Edge locations plus PATH are detected automatically.
