@@ -1,6 +1,6 @@
 {
   "name": "deepseek-web-harness",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "MCP bridge that routes prompts from compatible AI harnesses to an authenticated DeepSeek Web browser session.",
@@ -8,7 +8,7 @@
     "login": "node server/login.js",
     "chat": "node server/cli.js",
     "mcp": "node server/index.js",
-    "check": "node server/self-check.js && node server/mcp-check.js"
+    "check": "node server/self-check.js && node server/mcp-check.js && node server/mcp-tools-check.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

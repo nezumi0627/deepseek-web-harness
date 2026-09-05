@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { chromium } from "playwright-core";
 
@@ -11,15 +11,49 @@ export function bridgeHome() {
   return process.env.DEEPSEEK_WEB_BRIDGE_HOME || join(homedir(), ".deepseek-web-bridge");
 }
 
+function executableFromPath(names) {
+  const pathEntries = (process.env.PATH || "").split(delimiter).filter(Boolean);
+  const suffixes = process.platform === "win32" ? [".exe", ".cmd", ".bat", ""] : [""];
+  for (const directory of pathEntries) {
+    for (const name of names) {
+      for (const suffix of suffixes) {
+        const candidate = join(directory, `${name}${suffix}`);
+        if (existsSync(candidate)) return candidate;
+      }
+    }
+  }
+  return null;
+}
+
 export function findChrome() {
-  const candidates = [
-    process.env.DEEPSEEK_WEB_CHROME,
-    "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
-    "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
-    "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
-  ].filter(Boolean);
-  return candidates.find(existsSync) || null;
+  const configured = process.env.DEEPSEEK_WEB_CHROME;
+  if (configured && existsSync(configured)) return configured;
+
+  const platformCandidates = process.platform === "darwin"
+    ? [
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+        "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
+      ]
+    : process.platform === "win32"
+      ? [
+          "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+          "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+          "C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe",
+          "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe"
+        ]
+      : [
+          "/usr/bin/google-chrome",
+          "/usr/bin/google-chrome-stable",
+          "/usr/bin/chromium",
+          "/usr/bin/chromium-browser",
+          "/usr/bin/microsoft-edge",
+          "/usr/bin/microsoft-edge-stable",
+          "/snap/bin/chromium"
+        ];
+
+  return platformCandidates.find(existsSync)
+    || executableFromPath(["google-chrome-stable", "google-chrome", "chromium", "chromium-browser", "microsoft-edge-stable", "microsoft-edge"]);
 }
 
 function visibleFirst(page, selectors) {
@@ -123,18 +157,57 @@ async function sendPrompt(page, input, prompt) {
 
 async function assistantTexts(page) {
   return page.evaluate(() => {
-    const selectors = [
-      '[data-role="assistant"]',
-      '[data-message-author-role="assistant"]',
-      '.ds-markdown',
-      '.markdown'
-    ];
-    const nodes = selectors.flatMap(selector => [...document.querySelectorAll(selector)]);
-    return [...new Set(nodes)].map(node => (node.innerText || node.textContent || "").trim()).filter(Boolean);
+    const reasoningSelector = [
+      '.ds-think-content',
+      '[data-role="reasoning"]',
+      '[data-testid*="reason" i]',
+      '[data-testid*="think" i]',
+      '[class*="reasoning" i]',
+      '[class*="thinking" i]',
+      '[class*="think-content" i]',
+      '.ds-reasoning',
+      '.ds-think'
+    ].join(', ');
+
+    const markdown = [...document.querySelectorAll('.ds-markdown, .markdown')]
+      .filter(node => !node.closest(reasoningSelector));
+    if (markdown.length) {
+      return [...new Set(markdown)]
+        .map(node => (node.innerText || node.textContent || "").trim())
+        .filter(Boolean);
+    }
+
+    const wrappers = [...document.querySelectorAll('[data-role="assistant"], [data-message-author-role="assistant"]')];
+    return wrappers
+      .map(node => {
+        const clone = node.cloneNode(true);
+        clone.querySelectorAll(reasoningSelector).forEach(child => child.remove());
+        return (clone.innerText || clone.textContent || "").trim();
+      })
+      .filter(Boolean);
   });
 }
 
-async function waitForStableReply(page, beforeCount, timeoutMs) {
+async function reasoningTexts(page) {
+  return page.evaluate(() => {
+    const preferred = [...document.querySelectorAll('.ds-think-content')];
+    const nodes = preferred.length ? preferred : [...document.querySelectorAll([
+      '[data-role="reasoning"]',
+      '[data-testid*="reason" i]',
+      '[data-testid*="think" i]',
+      '[class*="reasoning" i]',
+      '[class*="thinking" i]',
+      '[class*="think-content" i]',
+      '.ds-reasoning',
+      '.ds-think'
+    ].join(', '))];
+    return [...new Set(nodes)]
+      .map(node => (node.innerText || node.textContent || "").trim())
+      .filter(Boolean);
+  });
+}
+
+async function waitForStableReply(page, beforeCount, beforeReasoningCount, timeoutMs) {
   const started = Date.now();
   let previous = "";
   let stableSince = 0;
@@ -144,7 +217,13 @@ async function waitForStableReply(page, beforeCount, timeoutMs) {
     if (texts.length > beforeCount && current) {
       if (current === previous) {
         if (!stableSince) stableSince = Date.now();
-        if (Date.now() - stableSince >= 1200) return current;
+        if (Date.now() - stableSince >= 1200) {
+          const reasoning = await reasoningTexts(page);
+          return {
+            text: current,
+            thinking: reasoning.length > beforeReasoningCount ? reasoning.at(-1) || "" : ""
+          };
+        }
       } else {
         previous = current;
         stableSince = 0;
@@ -158,13 +237,18 @@ async function waitForStableReply(page, beforeCount, timeoutMs) {
 async function startDebugChrome(executablePath, profile) {
   const devToolsFile = join(profile, "DevToolsActivePort");
   rmSync(devToolsFile, { force: true });
-  const chrome = spawn(executablePath, [
+  const args = [
     `--user-data-dir=${profile}`,
-    "--remote-debugging-port=0",
-    "--start-maximized",
-    DEEPSEEK_URL
-  ], { stdio: "ignore" });
+    "--remote-debugging-port=0"
+  ];
+  if (/^(1|true|yes)$/i.test(process.env.DEEPSEEK_WEB_HEADLESS || "")) {
+    args.push("--headless=new", "--window-size=1440,1200");
+  } else {
+    args.push("--start-maximized");
+  }
+  args.push(DEEPSEEK_URL);
 
+  const chrome = spawn(executablePath, args, { stdio: "ignore" });
   const started = Date.now();
   while (Date.now() - started < 15_000) {
     if (existsSync(devToolsFile)) {
@@ -217,8 +301,10 @@ export async function askWebDeepSeek(prompt, options = {}) {
     }
     await uploadFiles(page, options.attachments || []);
     const beforeCount = (await assistantTexts(page)).length;
+    const beforeReasoningCount = (await reasoningTexts(page)).length;
     await sendPrompt(page, input, prompt.trim());
-    return await waitForStableReply(page, beforeCount, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    const result = await waitForStableReply(page, beforeCount, beforeReasoningCount, options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+    return options.includeThink ? result : result.text;
   });
 }
 
@@ -228,12 +314,16 @@ export async function getDeepSeekCapabilities() {
     const fileInput = page.locator('input[type="file"]');
     const accept = await fileInput.count() ? await fileInput.last().getAttribute("accept") : null;
     return {
+      platform: process.platform,
+      browser: findChrome(),
+      headless: /^(1|true|yes)$/i.test(process.env.DEEPSEEK_WEB_HEADLESS || ""),
       modes: {
         instant: /instant|インスタント/i.test(bodyText),
         expert: /expert|エキスパート/i.test(bodyText),
         imageRecognition: /image\s*recognition|画像認識/i.test(bodyText)
       },
       deepThink: /deep\s*think|r1|深く考える|ディープシンク|深度思考/i.test(bodyText),
+      thinkingCapture: true,
       search: /search|検索|スマート検索|联网搜索/i.test(bodyText),
       fileUpload: Boolean(await fileInput.count()),
       acceptedFileTypes: accept,
