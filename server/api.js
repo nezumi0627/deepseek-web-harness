@@ -12,6 +12,7 @@ import { askWithLocalToolLoop } from "./agent.js";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OPENAPI = JSON.parse(readFileSync(join(ROOT, "openapi.json"), "utf8"));
 const DEEPWIKI = readFileSync(join(ROOT, "docs", "DEEPWIKI.md"), "utf8");
+const WEBUI = readFileSync(join(ROOT, "webui", "index.html"), "utf8");
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 8787;
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
@@ -313,7 +314,7 @@ function formatError(format, error) {
   return { error: { message, type: code === "INVALID_API_KEY" ? "authentication_error" : "invalid_request_error", param: null, code, deepseek_web: details } };
 }
 
-export function createApiServer({ ask = askWebDeepSeekDetailed, apiKey = process.env.DEEPSEEK_WEB_API_KEY || "" } = {}) {
+export function createApiServer({ ask = askWebDeepSeekDetailed, apiKey = process.env.DEEPSEEK_WEB_API_KEY || "", webUi = false } = {}) {
   let queue = Promise.resolve();
   let queueDepth = 0;
   const queuedAsk = task => {
@@ -342,6 +343,10 @@ export function createApiServer({ ask = askWebDeepSeekDetailed, apiKey = process
       if (req.method === "GET" && url.pathname === "/deepwiki") {
         res.writeHead(200, { "content-type": "text/markdown; charset=utf-8", "content-length": Buffer.byteLength(DEEPWIKI) });
         return res.end(DEEPWIKI);
+      }
+      if (webUi && req.method === "GET" && ["/web", "/web/", "/web/index.html"].includes(url.pathname)) {
+        res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-length": Buffer.byteLength(WEBUI) });
+        return res.end(WEBUI);
       }
       if (req.method === "GET" && ["/docs", "/swagger"].includes(url.pathname)) {
         const html = swaggerHtml();
@@ -450,13 +455,13 @@ export function createApiServer({ ask = askWebDeepSeekDetailed, apiKey = process
   });
 }
 
-export function startApiServer() {
+export function startApiServer({ webUi = process.argv.includes("--webui") } = {}) {
   const host = process.env.DEEPSEEK_WEB_API_HOST || DEFAULT_HOST;
   const port = Number(process.env.DEEPSEEK_WEB_API_PORT || DEFAULT_PORT);
   const apiKey = process.env.DEEPSEEK_WEB_API_KEY || "";
   if (!Number.isInteger(port) || port < 1 || port > 65535) throw new Error("DEEPSEEK_WEB_API_PORT must be a valid TCP port.");
   if (!isLoopback(host) && !apiKey) throw new Error("DEEPSEEK_WEB_API_KEY is required when binding the API server outside localhost.");
-  const server = createApiServer({ apiKey });
+  const server = createApiServer({ apiKey, webUi });
   server.listen(port, host, () => {
     console.log(`DeepSeek Web API listening on http://${host}:${port}`);
     console.log(`Swagger: http://${host}:${port}/docs`);

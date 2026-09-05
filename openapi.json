@@ -95,6 +95,9 @@
     "/deepwiki": {
       "get": { "summary": "DeepWiki indexing guide", "security": [], "responses": { "200": { "description": "Markdown documentation" } } }
     },
+    "/web": {
+      "get": { "summary": "Optional browser harness UI", "description": "Available only when the server is started with --webui.", "security": [], "responses": { "200": { "description": "Harness web application" }, "404": { "description": "Web UI is disabled" } } }
+    },
     "/v1/models": {
       "get": {
         "summary": "List model aliases",

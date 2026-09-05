@@ -14,6 +14,7 @@
 | `GET /health` | Native | No auth |
 | `GET /openapi.json` | OpenAPI 3.1 | No auth |
 | `GET /docs` | Swagger UI | No auth |
+| `GET /web` | Optional harness Web UI | Enabled only with `npm start -- --webui` |
 | `GET /v1/queue` | Queue status | Shows active and waiting requests |
 | `GET/POST /v1/sessions` | Session management | Each created session is independent |
 | `GET/PATCH/DELETE /v1/sessions/:id` | Session lifecycle | Read, rename, or delete |

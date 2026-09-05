@@ -53,6 +53,8 @@ npm run api
 
 `npm start` は API サーバーモードで起動します。対話型の簡易 harness を使う場合だけ `npm start -- --harness`（または `npm run harness`）を指定します。harness では独立 session の切り替え、履歴・conversation URL の同期、fork/rename/compact、DeepThink/Search、画像やファイル添付、skill、自動 skill 選択、ストリーム風表示、推定 token 数と速度表示が使えます。ブラウザ UI は応答完了後にテキストを受け取るため、表示ストリームは遅延再生です。
 
+Web UI を使う場合は `npm start -- --webui` で API と UI を同時に起動し、`http://127.0.0.1:8787/web` を開きます。通常の `npm start` では `/web` は無効です。
+
 CLI の `--tools` または API の `deepseek_web.local_tools: true` を指定すると、DeepSeek の tool call を最大 8 回まで自動実行します。標準 tool は `read_file`、`write_file`、`list_files`、`run_check` で、対象は `DEEPSEEK_WEB_TOOL_ROOT`（未指定時は起動ディレクトリ）配下に制限されます。thinking は CLI の `--show-thinking --thinking-tag` で `<think>...</think>` として出力できます。
 
 回答言語は `npm run chat -- "質問" --language Japanese`、harness の `/language Japanese`、または API の `deepseek_web.language: "Japanese"` で固定できます。指定値は DeepSeek への明示的な言語指示として注入されます。
