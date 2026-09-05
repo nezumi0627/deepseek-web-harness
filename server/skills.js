@@ -30,3 +30,13 @@ export function buildPrompt(prompt, skillNames = []) {
   const skillText = selected.map(skill => `## Skill: ${skill.name}\n${skill.content}`).join("\n\n");
   return `${skillText}\n\n## User request\n${prompt.trim()}`;
 }
+
+export function autoSelectSkills(prompt) {
+  const text = String(prompt).toLowerCase();
+  const available = new Set(listSkills());
+  const selected = [];
+  for (const [name, words] of [["concise", ["短く", "concise", "brief"]], ["coding", ["code", "コード", "実装", "bug"]], ["research", ["research", "調査", "調べ"]]]) {
+    if (available.has(name) && words.some(word => text.includes(word))) selected.push(name);
+  }
+  return selected;
+}

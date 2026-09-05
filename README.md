@@ -45,6 +45,14 @@ Start the MCP server:
 npm run mcp
 ```
 
+Start the local OpenAI/Anthropic-compatible REST API:
+
+```sh
+npm run api
+```
+
+Default base URL: `http://127.0.0.1:8787`. Swagger UI is available at `http://127.0.0.1:8787/docs`, and the OpenAPI 3.1 document is at `/openapi.json`.
+
 Generic MCP stdio config:
 
 ```json
@@ -63,6 +71,16 @@ Tools:
 - `ask_web_deepseek` — prompt DeepSeek Web and return structured `{ text, thinking, toolCalls, conversationUrl }`. Supports `mode` (`instant`, `expert`, `imageRecognition`), `deepThink`, `search`, `newChat`, `attachments`, local `skills`, and host tool schemas/results.
 - `deepseek_web_capabilities` — inspect the signed-in Web UI for DeepThink, search, and file-upload support.
 - `list_deepseek_skills` — list local skills.
+
+REST compatibility endpoints:
+
+- `POST /v1/chat/completions` — OpenAI Chat Completions compatible.
+- `POST /v1/responses` — OpenAI Responses compatible.
+- `POST /v1/messages` — Anthropic Messages compatible.
+- `POST /v1/auto` — automatically detects Anthropic via `anthropic-version`, OpenAI Responses via `input`, and OpenAI Chat via `messages`.
+- `GET /v1/models` — model aliases that automatically map to DeepThink, Expert, Vision, or Search.
+
+See [docs/API.md](docs/API.md) for OpenAI/Anthropic SDK examples and sharing/authentication setup. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the data flow. The repository also has a [DeepWiki entrypoint](docs/DEEPWIKI.md) and [DeepWiki page](https://deepwiki.com/nezumi0627/deepseek-web-harness).
 
 `ask_web_deepseek` accepts `skills`, for example `["concise"]`. Skills live at `skills/<name>/SKILL.md` and are prepended to the prompt. `attachments` takes absolute local file paths and uploads them to DeepSeek Web before the prompt is sent. `includeThinking: true` returns the thinking text visibly rendered by DeepSeek Web separately from the final answer. The bridge also maps the current Web UI controls for Instant, Expert, Image Recognition, DeepThink, and Smart Search.
 
