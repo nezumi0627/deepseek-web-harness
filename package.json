@@ -9,6 +9,8 @@
     "chat": "node server/cli.js",
     "mcp": "node server/index.js",
     "api": "node server/api.js",
+    "start": "node server/start.js",
+    "harness": "node server/harness.js",
     "api:check": "node server/api-check.js",
     "check": "node server/self-check.js && node server/mcp-check.js && node server/api-check.js"
   },
