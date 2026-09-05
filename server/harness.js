@@ -3,13 +3,14 @@ import { stdin as input, stdout as output } from "node:process";
 import { askWebDeepSeekDetailed } from "./browser.js";
 import { autoSelectSkills, buildPrompt } from "./skills.js";
 import { appendTrajectory, compactSession, createSession, estimateTokens, getSession, listSessions, updateSession } from "./state.js";
+import { askWithLocalToolLoop } from "./agent.js";
 
 const rl = createInterface({ input, output });
 let session = createSession({ title: "Harness chat" });
 let settings = { mode: undefined, deepThink: undefined, search: undefined, skills: [], attachments: [], stream: false, includeThinking: true };
 
 function showHelp() {
-  console.log("/new [title]  /sessions  /use <id>  /rename <title>  /fork  /compact  /attach <path>  /skill <name>  /mode <instant|expert|imageRecognition>  /think  /search  /stream  /clear-attach  /quit");
+  console.log("/new [title]  /sessions  /use <id>  /rename <title>  /fork  /compact  /attach <path>  /skill <name>  /mode <instant|expert|imageRecognition>  /think  /search  /stream  /tools  /clear-attach  /quit");
 }
 function showStatus() {
   console.log(`session=${session.id} title=${session.title} messages=${session.messages.length} tokens≈${session.usage.totalTokens} mode=${settings.mode || "default"} stream=${settings.stream ? "on" : "off"}`);
@@ -32,6 +33,7 @@ async function command(line) {
   else if (name === "think") settings.deepThink = !settings.deepThink;
   else if (name === "search") settings.search = !settings.search;
   else if (name === "stream") settings.stream = !settings.stream;
+  else if (name === "tools") settings.localTools = !settings.localTools;
   else if (name === "quit" || name === "exit") return false;
   else console.log("unknown command; use /help");
   return true;
@@ -42,7 +44,9 @@ async function answer(prompt) {
   const started = performance.now();
   const fullPrompt = buildPrompt(prompt, skills);
   appendTrajectory(session.id, { type: "harness_request", prompt, skills, attachments: settings.attachments });
-  const result = await askWebDeepSeekDetailed(fullPrompt, { ...settings, newChat: !session.conversationUrl, conversationUrl: session.conversationUrl });
+  const result = settings.localTools
+    ? await askWithLocalToolLoop(askWebDeepSeekDetailed, fullPrompt, { ...settings, newChat: !session.conversationUrl, conversationUrl: session.conversationUrl })
+    : await askWebDeepSeekDetailed(fullPrompt, { ...settings, newChat: !session.conversationUrl, conversationUrl: session.conversationUrl });
   const elapsed = Math.max(1, performance.now() - started);
   const inputTokens = estimateTokens(fullPrompt);
   const outputTokens = estimateTokens(result.text);

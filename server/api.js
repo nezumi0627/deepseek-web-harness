@@ -7,6 +7,7 @@ import { askWebDeepSeekDetailed } from "./browser.js";
 import { autoSelectSkills, buildPrompt } from "./skills.js";
 import { buildToolAwarePrompt, parseToolCalls } from "./tool-protocol.js";
 import { appendTrajectory, compactSession, createSession, deleteSession, estimateTokens, getSession, listSessions, readTrajectory, updateSession } from "./state.js";
+import { askWithLocalToolLoop } from "./agent.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OPENAPI = JSON.parse(readFileSync(join(ROOT, "openapi.json"), "utf8"));
@@ -418,8 +419,9 @@ export function createApiServer({ ask = askWebDeepSeekDetailed, apiKey = process
       const fullPrompt = buildPrompt(buildToolAwarePrompt(prompt, tools), skills);
       appendTrajectory(session.id, { type: "request", format, prompt, skills, compacted: compacted.compacted });
       const inputTokens = estimateTokens(fullPrompt);
-      const result = await queuedAsk(() => ask(fullPrompt, { ...deepSeekOptions(body), conversationUrl: session.conversationUrl || deepSeekOptions(body).conversationUrl, newChat: !session.conversationUrl }));
-      const toolCalls = parseToolCalls(result.text, tools);
+      const callOptions = { ...deepSeekOptions(body), conversationUrl: session.conversationUrl || deepSeekOptions(body).conversationUrl, newChat: !session.conversationUrl };
+      const result = await queuedAsk(() => ext.local_tools ? askWithLocalToolLoop(ask, fullPrompt, { ...callOptions, tools, maxToolTurns: ext.max_tool_turns }) : ask(fullPrompt, callOptions));
+      const toolCalls = result.toolCalls || parseToolCalls(result.text, tools);
       const outputTokens = estimateTokens(result.text);
       session = updateSession({ ...session, conversationUrl: result.conversationUrl || session.conversationUrl, messages: [...session.messages, { role: "user", content: prompt }, { role: "assistant", content: result.text }], usage: { inputTokens: session.usage.inputTokens + inputTokens, outputTokens: session.usage.outputTokens + outputTokens, totalTokens: session.usage.totalTokens + inputTokens + outputTokens } });
       appendTrajectory(session.id, { type: "response", text: result.text, thinking: result.thinking || null, toolCalls, conversationUrl: result.conversationUrl, usage: { inputTokens, outputTokens } });

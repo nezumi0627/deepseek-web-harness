@@ -156,16 +156,35 @@ async function sendPrompt(page, input, prompt) {
   else await input.press("Enter");
 }
 
+export function cleanReplyText(value) {
+  return String(value || "")
+    .replace(/[\u200b\u200c\u200d\ufeff]/g, "")
+    .replace(/([^\n])\s*-\s*\d+\s*(?=[。！？])/gu, "$1")
+    .replace(/[-−–—]\s*(?:\d+\s*)?(?=[。！？、，：:,.])/gu, "")
+    .replace(/^\s*(?:-\s*)?\d+\s*$/gm, "")
+    .replace(/^\s*#+\s*\d+\s*$/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 async function assistantReplies(page) {
   return page.evaluate(() => {
     const readText = node => (node?.innerText || node?.textContent || "").trim();
+    const cleanReplyText = value => String(value || "")
+      .replace(/[\u200b\u200c\u200d\ufeff]/g, "")
+      .replace(/([^\n])\s*-\s*\d+\s*(?=[。！？])/gu, "$1")
+      .replace(/[-−–—]\s*(?:\d+\s*)?(?=[。！？、，：:,.])/gu, "")
+      .replace(/^\s*(?:-\s*)?\d+\s*$/gm, "")
+      .replace(/^\s*#+\s*\d+\s*$/gm, "")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
     const finalNodes = [...document.querySelectorAll(".ds-assistant-message-main-content")];
     if (finalNodes.length) {
       return finalNodes
         .map(node => {
           const wrapper = node.closest(".ds-message") || node.parentElement;
           return {
-            text: readText(node),
+            text: cleanReplyText(readText(node)),
             thinking: readText(wrapper?.querySelector(".ds-think-content")) || null
           };
         })
@@ -178,7 +197,7 @@ async function assistantReplies(page) {
       const clone = node.cloneNode(true);
       clone.querySelectorAll?.(".ds-think-content").forEach(element => element.remove());
       return {
-        text: readText(clone),
+        text: cleanReplyText(readText(clone)),
         thinking: readText(node.querySelector?.(".ds-think-content")) || null
       };
     }).filter(reply => reply.text);
