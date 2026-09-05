@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "example": {
+      "command": "node",
+      "args": ["/absolute/path/to/your-mcp-server.js"],
+      "cwd": ".",
+      "env": {}
+    }
+  }
+}
