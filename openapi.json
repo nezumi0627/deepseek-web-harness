@@ -89,6 +89,9 @@
         "responses": { "200": { "description": "Healthy" } }
       }
     },
+    "/deepwiki": {
+      "get": { "summary": "DeepWiki indexing guide", "security": [], "responses": { "200": { "description": "Markdown documentation" } } }
+    },
     "/v1/models": {
       "get": {
         "summary": "List model aliases",

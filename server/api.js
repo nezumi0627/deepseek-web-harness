@@ -10,6 +10,7 @@ import { appendTrajectory, compactSession, createSession, deleteSession, estimat
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const OPENAPI = JSON.parse(readFileSync(join(ROOT, "openapi.json"), "utf8"));
+const DEEPWIKI = readFileSync(join(ROOT, "docs", "DEEPWIKI.md"), "utf8");
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 8787;
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
@@ -337,6 +338,10 @@ export function createApiServer({ ask = askWebDeepSeekDetailed, apiKey = process
       if (req.method === "GET" && url.pathname === "/health") return sendJson(res, 200, { status: "ok", service: "deepseek-web-harness" });
       if (req.method === "GET" && url.pathname === "/v1/queue") return sendJson(res, 200, { active: queueDepth > 0, queued: Math.max(0, queueDepth - 1), depth: queueDepth });
       if (req.method === "GET" && url.pathname === "/openapi.json") return sendJson(res, 200, OPENAPI);
+      if (req.method === "GET" && url.pathname === "/deepwiki") {
+        res.writeHead(200, { "content-type": "text/markdown; charset=utf-8", "content-length": Buffer.byteLength(DEEPWIKI) });
+        return res.end(DEEPWIKI);
+      }
       if (req.method === "GET" && ["/docs", "/swagger"].includes(url.pathname)) {
         const html = swaggerHtml();
         res.writeHead(200, { "content-type": "text/html; charset=utf-8", "content-length": Buffer.byteLength(html) });

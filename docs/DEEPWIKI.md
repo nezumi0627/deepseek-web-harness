@@ -1,5 +1,7 @@
 # DeepWiki entrypoint
 
+When the API is running, the same guide is available at `GET /deepwiki`. DeepWiki can index the GitHub repository directly, or use this endpoint for a local instance.
+
 Use these repository files as the canonical source when indexing this project in DeepWiki:
 
 1. `README.md` — project purpose, setup, MCP usage, disclaimer.

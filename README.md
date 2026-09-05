@@ -51,7 +51,7 @@ Start the local OpenAI/Anthropic-compatible REST API:
 npm run api
 ```
 
-Default base URL: `http://127.0.0.1:8787`. Swagger UI is available at `http://127.0.0.1:8787/docs`, and the OpenAPI 3.1 document is at `/openapi.json`.
+Default base URL: `http://127.0.0.1:8787`. Swagger UI is available at `http://127.0.0.1:8787/docs`, the OpenAPI 3.1 document is at `/openapi.json`, and the DeepWiki indexing guide is at `/deepwiki`.
 
 Generic MCP stdio config:
 
