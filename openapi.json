@@ -108,6 +108,9 @@
     "/v1/queue": {
       "get": { "summary": "View serialized browser request queue", "security": [{ "BearerAuth": [] }], "responses": { "200": { "description": "Queue depth" } } }
     },
+    "/v1/uploads": {
+      "post": { "summary": "Upload a local media/file for DeepSeek Web", "security": [{ "BearerAuth": [] }], "requestBody": { "required": true, "content": { "application/json": { "schema": { "type": "object", "required": ["filename", "data"], "properties": { "filename": { "type": "string" }, "data": { "type": "string", "description": "Base64 or data URL, maximum 10 MiB decoded." } } } } } }, "responses": { "201": { "description": "Server-local path for deepseek_web.attachments" } } }
+    },
     "/v1/sessions": {
       "get": { "summary": "List independent chat sessions", "security": [{ "BearerAuth": [] }], "responses": { "200": { "description": "Session list" } } },
       "post": { "summary": "Create an independent chat session", "security": [{ "BearerAuth": [] }], "responses": { "201": { "description": "Created session" } } }

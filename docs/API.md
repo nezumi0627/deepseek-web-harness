@@ -16,6 +16,7 @@
 | `GET /docs` | Swagger UI | No auth |
 | `GET /web` | Optional harness Web UI | Enabled only with `npm start -- --webui` |
 | `GET /v1/queue` | Queue status | Shows active and waiting requests |
+| `POST /v1/uploads` | Media/file upload | Returns a server-local attachment path for the next request |
 | `GET/POST /v1/sessions` | Session management | Each created session is independent |
 | `GET/PATCH/DELETE /v1/sessions/:id` | Session lifecycle | Read, rename, or delete |
 | `POST /v1/sessions/:id/fork` | Fork | Creates a new independent session |

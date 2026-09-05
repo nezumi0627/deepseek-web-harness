@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { randomUUID } from "node:crypto";
 
 const root = () => process.env.DEEPSEEK_WEB_STATE_DIR || join(homedir(), ".deepseek-web-bridge", "state");
@@ -22,6 +22,14 @@ export function updateSession(session) { return write({ ...session, updatedAt: n
 export function deleteSession(id) { if (!read(id)) return false; rmSync(file(id), { force: true }); return true; }
 export function appendTrajectory(sessionId, event) { if (!validId(sessionId)) throw new Error("Invalid session id."); ensure(); appendFileSync(join(trajectoryDir(), `${sessionId}.jsonl`), JSON.stringify({ at: new Date().toISOString(), ...event }) + "\n"); }
 export function readTrajectory(sessionId) { if (!validId(sessionId)) return []; const path = join(trajectoryDir(), `${sessionId}.jsonl`); return existsSync(path) ? readFileSync(path, "utf8").trim().split("\n").filter(Boolean).map(JSON.parse) : []; }
+export function saveUpload(filename, data) {
+  if (typeof filename !== "string" || !filename.trim() || typeof data !== "string") throw new Error("filename and base64 data are required.");
+  const clean = data.replace(/^data:[^;]+;base64,/, "");
+  if (!/^[A-Za-z0-9+/\s]+={0,2}$/.test(clean) || Buffer.byteLength(clean, "base64") > 10 * 1024 * 1024) throw new Error("Invalid or oversized upload.");
+  const dir = join(root(), "uploads"); mkdirSync(dir, { recursive: true });
+  const safe = basename(filename).replace(/[^A-Za-z0-9._-]/g, "_") || "upload.bin";
+  const path = join(dir, `${randomUUID()}-${safe}`); writeFileSync(path, Buffer.from(clean, "base64")); return path;
+}
 export function estimateTokens(value) { return Math.max(0, Math.ceil(String(value ?? "").length / 4)); }
 export function compactSession(session, limit = 12000) {
   const text = session.messages.map(m => `${m.role}: ${m.content}`).join("\n");

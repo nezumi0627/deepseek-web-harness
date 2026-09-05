@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { askWebDeepSeekDetailed } from "./browser.js";
 import { autoSelectSkills, buildPrompt, forceLanguage } from "./skills.js";
 import { buildToolAwarePrompt, parseToolCalls } from "./tool-protocol.js";
-import { appendTrajectory, compactSession, createSession, deleteSession, estimateTokens, getSession, listSessions, readTrajectory, updateSession } from "./state.js";
+import { appendTrajectory, compactSession, createSession, deleteSession, estimateTokens, getSession, listSessions, readTrajectory, saveUpload, updateSession } from "./state.js";
 import { askWithLocalToolLoop } from "./agent.js";
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -271,15 +271,12 @@ function anthropicResponse(body, result, toolCalls) {
 
 function openAiChatSse(response) {
   const choice = response.choices[0];
-  const delta = choice.message.tool_calls
-    ? { role: "assistant", tool_calls: choice.message.tool_calls.map((call, index) => ({ index, ...call })) }
-    : { role: "assistant", content: choice.message.content };
   const base = { id: response.id, object: "chat.completion.chunk", created: response.created, model: response.model };
-  return [
-    `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta, finish_reason: null }] })}\n\n`,
-    `data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: choice.finish_reason }] })}\n\n`,
-    "data: [DONE]\n\n"
-  ];
+  const events = [`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { role: "assistant" }, finish_reason: null }] })}\n\n`];
+  if (choice.message.tool_calls) events.push(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { tool_calls: choice.message.tool_calls.map((call, index) => ({ index, ...call })) }, finish_reason: null }] })}\n\n`);
+  else for (const chunk of choice.message.content.match(/.{1,48}/gs) || []) events.push(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: { content: chunk }, finish_reason: null }] })}\n\n`);
+  events.push(`data: ${JSON.stringify({ ...base, choices: [{ index: 0, delta: {}, finish_reason: choice.finish_reason }] })}\n\n`, "data: [DONE]\n\n");
+  return events;
 }
 
 function anthropicSse(response) {
@@ -288,14 +285,12 @@ function anthropicSse(response) {
   const blockStart = first.type === "tool_use"
     ? { type: "content_block_start", index: 0, content_block: { type: "tool_use", id: first.id, name: first.name, input: {} } }
     : { type: "content_block_start", index: 0, content_block: { type: "text", text: "" } };
-  const delta = first.type === "tool_use"
-    ? { type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: JSON.stringify(first.input) } }
-    : { type: "content_block_delta", index: 0, delta: { type: "text_delta", text: first.text } };
+  const deltas = first.type === "tool_use" ? [{ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: JSON.stringify(first.input) } }] : (first.text.match(/.{1,48}/gs) || []).map(text => ({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text } }));
   const event = value => `event: ${value.type}\ndata: ${JSON.stringify(value)}\n\n`;
   return [
     event({ type: "message_start", message: start }),
     event(blockStart),
-    event(delta),
+    ...deltas.map(event),
     event({ type: "content_block_stop", index: 0 }),
     event({ type: "message_delta", delta: { stop_reason: response.stop_reason, stop_sequence: null }, usage: { output_tokens: 0 } }),
     event({ type: "message_stop" })
@@ -317,11 +312,20 @@ function formatError(format, error) {
 export function createApiServer({ ask = askWebDeepSeekDetailed, apiKey = process.env.DEEPSEEK_WEB_API_KEY || "", webUi = false } = {}) {
   let queue = Promise.resolve();
   let queueDepth = 0;
+  const sessionLocks = new Map();
   const queuedAsk = task => {
     queueDepth += 1;
     const next = queue.then(task, task);
     queue = next.catch(() => {});
     next.finally(() => { queueDepth -= 1; }).catch(() => {});
+    return next;
+  };
+  const runSession = (id, task) => {
+    const previous = sessionLocks.get(id) || Promise.resolve();
+    const next = previous.then(task, task);
+    const tracked = next.finally(() => { if (sessionLocks.get(id) === tracked) sessionLocks.delete(id); });
+    tracked.catch(() => {});
+    sessionLocks.set(id, tracked);
     return next;
   };
 
@@ -365,6 +369,12 @@ export function createApiServer({ ask = askWebDeepSeekDetailed, apiKey = process
       }
 
       assertAuthorized(req, apiKey);
+
+      if (url.pathname === "/v1/uploads" && req.method === "POST") {
+        const body = await readJson(req);
+        try { return sendJson(res, 201, { path: saveUpload(body.filename, body.data) }); }
+        catch (error) { throw new ApiError(422, "INVALID_UPLOAD", error instanceof Error ? error.message : String(error)); }
+      }
 
       if (url.pathname === "/v1/sessions" && req.method === "GET") return sendJson(res, 200, { data: listSessions() });
       if (url.pathname === "/v1/sessions" && req.method === "POST") {
@@ -424,12 +434,19 @@ export function createApiServer({ ask = askWebDeepSeekDetailed, apiKey = process
       const fullPrompt = forceLanguage(buildPrompt(buildToolAwarePrompt(prompt, tools), skills), ext.language);
       appendTrajectory(session.id, { type: "request", format, prompt, skills, compacted: compacted.compacted });
       const inputTokens = estimateTokens(fullPrompt);
-      const callOptions = { ...deepSeekOptions(body), conversationUrl: session.conversationUrl || deepSeekOptions(body).conversationUrl, newChat: !session.conversationUrl };
-      const result = await queuedAsk(() => ext.local_tools ? askWithLocalToolLoop(ask, fullPrompt, { ...callOptions, tools, maxToolTurns: ext.max_tool_turns }) : ask(fullPrompt, callOptions));
-      const toolCalls = result.toolCalls || parseToolCalls(result.text, tools);
-      const outputTokens = estimateTokens(result.text);
-      session = updateSession({ ...session, conversationUrl: result.conversationUrl || session.conversationUrl, messages: [...session.messages, { role: "user", content: prompt }, { role: "assistant", content: result.text }], usage: { inputTokens: session.usage.inputTokens + inputTokens, outputTokens: session.usage.outputTokens + outputTokens, totalTokens: session.usage.totalTokens + inputTokens + outputTokens } });
-      appendTrajectory(session.id, { type: "response", text: result.text, thinking: result.thinking || null, toolCalls, conversationUrl: result.conversationUrl, usage: { inputTokens, outputTokens } });
+      const outcome = await runSession(session.id, async () => {
+        const latest = getSession(session.id) || session;
+        const callOptions = { ...deepSeekOptions(body), conversationUrl: latest.conversationUrl || deepSeekOptions(body).conversationUrl, newChat: !latest.conversationUrl };
+        const result = await queuedAsk(() => ext.local_tools ? askWithLocalToolLoop(ask, fullPrompt, { ...callOptions, tools, maxToolTurns: ext.max_tool_turns }) : ask(fullPrompt, callOptions));
+        const toolCalls = result.toolCalls || parseToolCalls(result.text, tools);
+        const outputTokens = estimateTokens(result.text);
+        const updated = updateSession({ ...latest, conversationUrl: result.conversationUrl || latest.conversationUrl, messages: [...latest.messages, { role: "user", content: prompt }, { role: "assistant", content: result.text }], usage: { inputTokens: latest.usage.inputTokens + inputTokens, outputTokens: latest.usage.outputTokens + outputTokens, totalTokens: latest.usage.totalTokens + inputTokens + outputTokens } });
+        appendTrajectory(updated.id, { type: "response", text: result.text, thinking: result.thinking || null, toolCalls, conversationUrl: result.conversationUrl, usage: { inputTokens, outputTokens } });
+        return { result, toolCalls, session: updated, outputTokens };
+      });
+      const { result, toolCalls } = outcome;
+      session = outcome.session;
+      const outputTokens = outcome.outputTokens;
 
       if (format === "anthropic") {
         const response = anthropicResponse(body, result, toolCalls);
