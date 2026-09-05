@@ -78,8 +78,7 @@ export async function callMcpTool(qualifiedName, args = {}) {
   const serverName = qualifiedName.slice(0, slash);
   const toolName = qualifiedName.slice(slash + 1);
   const client = await getClient(serverName);
-  const result = await client.callTool({ name: toolName, arguments: args || {} });
-  return result;
+  return client.callTool({ name: toolName, arguments: args || {} });
 }
 
 export function formatMcpToolResult(result) {
@@ -90,4 +89,10 @@ export function formatMcpToolResult(result) {
   }
   if (!parts.length) return JSON.stringify(result ?? null);
   return parts.join("\n\n");
+}
+
+export async function closeMcpClients() {
+  const openClients = [...clients.values()];
+  clients.clear();
+  await Promise.allSettled(openClients.map(client => client.close()));
 }
