@@ -1,0 +1,158 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "DeepSeek Web Harness API",
+    "version": "0.3.0",
+    "description": "Unofficial local REST bridge for a signed-in DeepSeek Web session. Supports OpenAI-compatible Chat Completions/Responses and Anthropic-compatible Messages payloads."
+  },
+  "servers": [{ "url": "http://127.0.0.1:8787" }],
+  "components": {
+    "securitySchemes": {
+      "BearerAuth": { "type": "http", "scheme": "bearer" },
+      "AnthropicApiKey": { "type": "apiKey", "in": "header", "name": "x-api-key" }
+    },
+    "schemas": {
+      "DeepSeekWebOptions": {
+        "type": "object",
+        "properties": {
+          "mode": { "type": "string", "enum": ["instant", "expert", "imageRecognition"] },
+          "deep_think": { "type": "boolean" },
+          "search": { "type": "boolean" },
+          "skills": { "type": "array", "items": { "type": "string" } },
+          "attachments": { "type": "array", "items": { "type": "string" }, "description": "Absolute paths on the API server host." },
+          "conversation_url": { "type": "string", "format": "uri" },
+          "include_thinking": { "type": "boolean" },
+          "session_id": { "type": "string", "pattern": "^sess_[0-9a-f-]{36}$" }
+        },
+        "additionalProperties": false
+      },
+      "OpenAIMessage": {
+        "type": "object",
+        "required": ["role", "content"],
+        "properties": {
+          "role": { "type": "string" },
+          "content": { "oneOf": [{ "type": "string" }, { "type": "array", "items": {} }] },
+          "tool_call_id": { "type": "string" },
+          "tool_calls": { "type": "array", "items": {} }
+        },
+        "additionalProperties": true
+      },
+      "OpenAIChatRequest": {
+        "type": "object",
+        "required": ["messages"],
+        "properties": {
+          "model": { "type": "string", "default": "deepseek-web" },
+          "messages": { "type": "array", "minItems": 1, "items": { "$ref": "#/components/schemas/OpenAIMessage" } },
+          "tools": { "type": "array", "items": {} },
+          "stream": { "type": "boolean", "default": false },
+          "deepseek_web": { "$ref": "#/components/schemas/DeepSeekWebOptions" }
+        },
+        "additionalProperties": true
+      },
+      "OpenAIResponsesRequest": {
+        "type": "object",
+        "required": ["input"],
+        "properties": {
+          "model": { "type": "string", "default": "deepseek-web" },
+          "input": { "oneOf": [{ "type": "string" }, { "type": "array", "items": {} }] },
+          "tools": { "type": "array", "items": {} },
+          "stream": { "type": "boolean", "default": false },
+          "deepseek_web": { "$ref": "#/components/schemas/DeepSeekWebOptions" }
+        },
+        "additionalProperties": true
+      },
+      "AnthropicMessagesRequest": {
+        "type": "object",
+        "required": ["messages", "max_tokens"],
+        "properties": {
+          "model": { "type": "string", "default": "deepseek-web" },
+          "max_tokens": { "type": "integer", "minimum": 1 },
+          "system": { "oneOf": [{ "type": "string" }, { "type": "array", "items": {} }] },
+          "messages": { "type": "array", "minItems": 1, "items": {} },
+          "tools": { "type": "array", "items": {} },
+          "stream": { "type": "boolean", "default": false },
+          "deepseek_web": { "$ref": "#/components/schemas/DeepSeekWebOptions" }
+        },
+        "additionalProperties": true
+      },
+      "Error": {
+        "type": "object",
+        "properties": { "error": { "type": "object" } }
+      }
+    }
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health check",
+        "security": [],
+        "responses": { "200": { "description": "Healthy" } }
+      }
+    },
+    "/deepwiki": {
+      "get": { "summary": "DeepWiki indexing guide", "security": [], "responses": { "200": { "description": "Markdown documentation" } } }
+    },
+    "/v1/models": {
+      "get": {
+        "summary": "List model aliases",
+        "security": [{ "BearerAuth": [] }, { "AnthropicApiKey": [] }],
+        "responses": { "200": { "description": "Available model aliases" } }
+      }
+    },
+    "/v1/queue": {
+      "get": { "summary": "View serialized browser request queue", "security": [{ "BearerAuth": [] }], "responses": { "200": { "description": "Queue depth" } } }
+    },
+    "/v1/sessions": {
+      "get": { "summary": "List independent chat sessions", "security": [{ "BearerAuth": [] }], "responses": { "200": { "description": "Session list" } } },
+      "post": { "summary": "Create an independent chat session", "security": [{ "BearerAuth": [] }], "responses": { "201": { "description": "Created session" } } }
+    },
+    "/v1/sessions/{sessionId}": {
+      "parameters": [{ "name": "sessionId", "in": "path", "required": true, "schema": { "type": "string" } }],
+      "get": { "summary": "Get a session and usage", "security": [{ "BearerAuth": [] }], "responses": { "200": { "description": "Session" } } },
+      "patch": { "summary": "Rename a session", "security": [{ "BearerAuth": [] }], "responses": { "200": { "description": "Renamed session" } } },
+      "delete": { "summary": "Delete a session and its metadata", "security": [{ "BearerAuth": [] }], "responses": { "204": { "description": "Deleted" } } }
+    },
+    "/v1/sessions/{sessionId}/trajectory": {
+      "get": { "summary": "Read the JSONL execution history", "security": [{ "BearerAuth": [] }], "responses": { "200": { "description": "Trajectory events" } } }
+    },
+    "/v1/sessions/{sessionId}/compact": {
+      "post": { "summary": "Compact a session context", "security": [{ "BearerAuth": [] }], "responses": { "200": { "description": "Compacted session" } } }
+    },
+    "/v1/sessions/{sessionId}/fork": {
+      "post": { "summary": "Fork an independent session", "security": [{ "BearerAuth": [] }], "responses": { "201": { "description": "Forked session" } } }
+    },
+    "/v1/chat/completions": {
+      "post": {
+        "summary": "OpenAI-compatible Chat Completions",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OpenAIChatRequest" } } } },
+        "responses": { "200": { "description": "Chat completion or SSE stream" }, "400": { "description": "Invalid request", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } } } }
+      }
+    },
+    "/v1/responses": {
+      "post": {
+        "summary": "OpenAI-compatible Responses API",
+        "security": [{ "BearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OpenAIResponsesRequest" } } } },
+        "responses": { "200": { "description": "Response object" } }
+      }
+    },
+    "/v1/messages": {
+      "post": {
+        "summary": "Anthropic-compatible Messages API",
+        "security": [{ "AnthropicApiKey": [] }, { "BearerAuth": [] }],
+        "parameters": [{ "name": "anthropic-version", "in": "header", "schema": { "type": "string", "default": "2023-06-01" } }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AnthropicMessagesRequest" } } } },
+        "responses": { "200": { "description": "Anthropic message or SSE stream" } }
+      }
+    },
+    "/v1/auto": {
+      "post": {
+        "summary": "Auto-detect OpenAI Chat, OpenAI Responses, or Anthropic Messages payload",
+        "security": [{ "BearerAuth": [] }, { "AnthropicApiKey": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": {} } } },
+        "responses": { "200": { "description": "Provider-compatible response" } }
+      }
+    }
+  }
+}
