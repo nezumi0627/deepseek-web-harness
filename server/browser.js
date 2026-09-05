@@ -155,35 +155,56 @@ async function sendPrompt(page, input, prompt) {
   else await input.press("Enter");
 }
 
-async function uniqueTexts(page, selectors) {
-  return page.evaluate(selectors => {
-    const nodes = selectors.flatMap(selector => [...document.querySelectorAll(selector)]);
-    return [...new Set(nodes)]
-      .map(node => (node.innerText || node.textContent || "").trim())
-      .filter(Boolean);
-  }, selectors);
-}
-
 async function assistantTexts(page) {
-  return uniqueTexts(page, [
-    '[data-role="assistant"]',
-    '[data-message-author-role="assistant"]',
-    '.ds-markdown',
-    '.markdown'
-  ]);
+  return page.evaluate(() => {
+    const reasoningSelector = [
+      '.ds-think-content',
+      '[data-role="reasoning"]',
+      '[data-testid*="reason" i]',
+      '[data-testid*="think" i]',
+      '[class*="reasoning" i]',
+      '[class*="thinking" i]',
+      '[class*="think-content" i]',
+      '.ds-reasoning',
+      '.ds-think'
+    ].join(', ');
+
+    const markdown = [...document.querySelectorAll('.ds-markdown, .markdown')]
+      .filter(node => !node.closest(reasoningSelector));
+    if (markdown.length) {
+      return [...new Set(markdown)]
+        .map(node => (node.innerText || node.textContent || "").trim())
+        .filter(Boolean);
+    }
+
+    const wrappers = [...document.querySelectorAll('[data-role="assistant"], [data-message-author-role="assistant"]')];
+    return wrappers
+      .map(node => {
+        const clone = node.cloneNode(true);
+        clone.querySelectorAll(reasoningSelector).forEach(child => child.remove());
+        return (clone.innerText || clone.textContent || "").trim();
+      })
+      .filter(Boolean);
+  });
 }
 
 async function reasoningTexts(page) {
-  return uniqueTexts(page, [
-    '[data-role="reasoning"]',
-    '[data-testid*="reason" i]',
-    '[data-testid*="think" i]',
-    '[class*="reasoning" i]',
-    '[class*="thinking" i]',
-    '[class*="think-content" i]',
-    '.ds-reasoning',
-    '.ds-think'
-  ]);
+  return page.evaluate(() => {
+    const preferred = [...document.querySelectorAll('.ds-think-content')];
+    const nodes = preferred.length ? preferred : [...document.querySelectorAll([
+      '[data-role="reasoning"]',
+      '[data-testid*="reason" i]',
+      '[data-testid*="think" i]',
+      '[class*="reasoning" i]',
+      '[class*="thinking" i]',
+      '[class*="think-content" i]',
+      '.ds-reasoning',
+      '.ds-think'
+    ].join(', '))];
+    return [...new Set(nodes)]
+      .map(node => (node.innerText || node.textContent || "").trim())
+      .filter(Boolean);
+  });
 }
 
 async function waitForStableReply(page, beforeCount, beforeReasoningCount, timeoutMs) {
