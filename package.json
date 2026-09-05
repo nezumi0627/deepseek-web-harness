@@ -8,7 +8,7 @@
     "login": "node server/login.js",
     "chat": "node server/cli.js",
     "mcp": "node server/index.js",
-    "check": "node server/self-check.js && node server/mcp-check.js"
+    "check": "node server/self-check.js && node server/mcp-check.js && node server/mcp-tools-check.js"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
